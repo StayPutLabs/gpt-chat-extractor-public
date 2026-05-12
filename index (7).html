@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ChatGPT Export Extractor</title>
+<meta name="description" content="Split your ChatGPT export into individual conversation files. Runs entirely in your browser — nothing is uploaded.">
+<style>
+  :root {
+    --fg: #1d1d1f; --muted: #6b6b70; --bg: #fff; --panel: #f7f7f8;
+    --border: #e3e3e6; --accent: #10a37f; --accent-hover: #0e8c6c;
+    --warn: #a33; --row-hover: #f0f0f2;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+         max-width: 1100px; margin: 2em auto; padding: 0 1em; color: var(--fg); background: var(--bg); }
+  h1 { margin: 0 0 0.2em; font-size: 1.6em; }
+  h2 { font-size: 1.1em; margin: 1.4em 0 0.5em; }
+  .sub { color: var(--muted); margin-top: 0; }
+  .privacy { background: #eef9f4; border-left: 3px solid var(--accent); padding: 0.6em 1em; border-radius: 4px; margin: 1em 0; font-size: 14px; }
+  #drop { border: 2px dashed #b5b5b9; border-radius: 8px; padding: 1.6em; text-align: center; margin: 1em 0; background: var(--panel); transition: background .15s,border-color .15s; }
+  #drop.dragover { background: #e7f3ee; border-color: var(--accent); }
+  #drop input[type=file] { margin-bottom: 0.5em; }
+  #filelist { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; margin: 0.4em 0; color: #444; white-space: pre-line; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto; }
+  button { padding: 0.55em 1em; margin: 0.2em 0.3em 0.2em 0; font-size: 14px; cursor: pointer; border: 1px solid #b5b5b9; background: #fff; border-radius: 6px; color: var(--fg); }
+  button:hover:not(:disabled) { background: #f0f0f2; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+  .stats { background: var(--panel); padding: 0.8em 1em; margin: 1em 0; border-radius: 6px; font-size: 14px; }
+  .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8em 1em; padding: 1em; background: var(--panel); border-radius: 6px; margin: 1em 0; }
+  .filters label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 0.2em; }
+  .filters input { width: 100%; padding: 0.45em 0.6em; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4em; margin: 0.5em 0; }
+  .toolbar .count { color: var(--muted); font-size: 13px; margin-left: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { text-align: left; padding: 0.5em 0.6em; border-bottom: 2px solid var(--border); background: var(--panel); cursor: pointer; user-select: none; position: sticky; top: 0; }
+  thead th.nosort { cursor: default; }
+  thead th .arrow { color: var(--muted); margin-left: 4px; font-size: 11px; }
+  tbody td { padding: 0.45em 0.6em; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tbody tr:hover { background: var(--row-hover); }
+  td.title { max-width: 500px; word-break: break-word; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.date { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .table-wrap { max-height: 480px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+  .empty { padding: 2em; text-align: center; color: var(--muted); }
+  footer { margin-top: 3em; font-size: 12px; color: var(--muted); text-align: center; padding: 1em 0; border-top: 1px solid var(--border); }
+  footer a { color: var(--muted); }
+  details { margin: 1em 0; }
+  details summary { cursor: pointer; color: var(--muted); }
+  details .body { margin-top: 0.6em; font-size: 14px; line-height: 1.55; }
+  code { background: #f0f0f2; padding: 1px 5px; border-radius: 3px; font-size: 0.92em; }
+</style>
+</head>
+<body>
+
+<h1>ChatGPT Export Extractor</h1>
+<p class="sub">Split your ChatGPT export into one text file per conversation.</p>
+
+<div class="privacy">
+  <strong>Local-only.</strong> Your data never leaves your browser — no upload, no server, no analytics. This page is a single static file you can save and run offline (<code>file://</code>).
+</div>
+
+<details>
+  <summary>How to get your ChatGPT export</summary>
+  <div class="body">
+    <ol>
+      <li>In ChatGPT, go to <strong>Settings → Data controls → Export data</strong>.</li>
+      <li>You'll get an email with a download link. Unzip it.</li>
+      <li>Inside you'll find either <code>conversations.json</code> or — for large accounts — a set of <code>conversations-000.json</code>, <code>conversations-001.json</code>, … files.</li>
+      <li>Drop them on the box below.</li>
+    </ol>
+  </div>
+</details>
+
+<div id="drop">
+  <input type="file" id="files" multiple accept=".json,application/json">
+  <div id="filelist"></div>
+  <p style="color:var(--muted);margin:0;font-size:13px">…or drag files onto this box</p>
+</div>
+
+<button id="run" class="primary" disabled>Parse</button>
+<span id="status" style="margin-left:0.5em;color:var(--muted);font-size:13px"></span>
+
+<div id="resultArea" style="display:none">
+  <div class="stats" id="stats"></div>
+
+  <h2>Filter</h2>
+  <div class="filters">
+    <div>
+      <label for="fTitle">Title contains</label>
+      <input id="fTitle" type="search" placeholder="e.g. recipe">
+    </div>
+    <div>
+      <label for="fKeyword">Content keywords (comma-separated, any match)</label>
+      <input id="fKeyword" type="search" placeholder="e.g. python, django">
+    </div>
+    <div>
+      <label for="fFrom">From date</label>
+      <input id="fFrom" type="date">
+    </div>
+    <div>
+      <label for="fTo">To date</label>
+      <input id="fTo" type="date">
+    </div>
+  </div>
+
+  <h2>Conversations</h2>
+  <div class="toolbar">
+    <button id="selVisible">Select visible</button>
+    <button id="deselVisible">Deselect visible</button>
+    <button id="invertVisible">Invert visible</button>
+    <button id="clearAll">Clear selection</button>
+    <span class="count" id="counts"></span>
+  </div>
+
+  <div class="table-wrap">
+    <table id="table">
+      <thead>
+        <tr>
+          <th class="nosort" style="width:30px"><input type="checkbox" id="selHeader" title="Select all visible"></th>
+          <th data-sort="title">Title <span class="arrow"></span></th>
+          <th data-sort="count" style="width:90px">Messages <span class="arrow"></span></th>
+          <th data-sort="created" style="width:160px">Created <span class="arrow"></span></th>
+          <th data-sort="updated" style="width:160px">Updated <span class="arrow"></span></th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div id="emptyMsg" class="empty" style="display:none">No conversations match your filters.</div>
+  </div>
+
+  <h2>Download</h2>
+  <button id="dlZip" class="primary">Download selected as ZIP</button>
+  <button id="dlText">Download selected as one .txt file</button>
+  <span id="dlInfo" style="margin-left:0.5em;color:var(--muted);font-size:13px"></span>
+</div>
+
+<footer>
+  Open source. <a href="https://github.com/" id="repoLink">View on GitHub</a> · Everything runs locally in your browser.
+</footer>
+
+<script>
+"use strict";
+
+// ===== Helpers =====
+
+function tsStr(t) {
+  if (!t) return "";
+  const d = new Date(Number(t) * 1000);
+  if (isNaN(d.getTime())) return "";
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function dateOnly(t) {
+  if (!t) return "";
+  const d = new Date(Number(t) * 1000);
+  if (isNaN(d.getTime())) return "";
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+
+function msgsFromMapping(mapping) {
+  if (!mapping) return [];
+  const out = [];
+  for (const nid of Object.keys(mapping)) {
+    const node = mapping[nid];
+    const msg = node && node.message;
+    if (!msg) continue;
+    const parts = (msg.content && msg.content.parts) || [];
+    const text = parts.filter(p => typeof p === "string").join("\n").trim();
+    if (!text) continue;
+    const role = (msg.author && msg.author.role) || "unknown";
+    out.push({ role, text, timestamp: msg.create_time, time_str: tsStr(msg.create_time) });
+  }
+  out.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  return out;
+}
+
+function safeName(title) {
+  if (!title) return "untitled";
+  let s = title.replace(/[·]/g, "_");
+  s = s.replace(/[^\w\s\-]/g, "");
+  s = s.trim().replace(/\s+/g, "_");
+  return s.slice(0, 80) || "untitled";
+}
+
+function formatConversation(conv) {
+  const msgs = conv.messages;
+  const lines = [];
+  lines.push("=".repeat(70));
+  lines.push(`TITLE: ${conv.title || ""}`);
+  lines.push(`CREATED: ${tsStr(conv.create_time)}`);
+  lines.push(`UPDATED: ${tsStr(conv.update_time)}`);
+  lines.push(`MESSAGES: ${msgs.length}`);
+  lines.push("=".repeat(70));
+  lines.push("");
+  for (const m of msgs) {
+    lines.push(`[${m.time_str}] ${m.role.toUpperCase()}:`);
+    lines.push(m.text);
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsText(file);
+  });
+}
+
+// ===== State =====
+
+let conversations = [];   // [{id, title, create_time, update_time, messages, contentLC, dateFrom, dateTo}]
+let visibleIds = [];      // ordered ids after filter+sort
+const selected = new Set();
+let sortKey = "created";
+let sortDir = -1;
+
+// ===== File picker =====
+
+const dropEl = document.getElementById("drop");
+const filesInput = document.getElementById("files");
+const fileListEl = document.getElementById("filelist");
+const runBtn = document.getElementById("run");
+const statusEl = document.getElementById("status");
+const resultArea = document.getElementById("resultArea");
+const statsEl = document.getElementById("stats");
+const tbody = document.getElementById("tbody");
+const emptyMsg = document.getElementById("emptyMsg");
+const countsEl = document.getElementById("counts");
+const selHeader = document.getElementById("selHeader");
+const dlInfo = document.getElementById("dlInfo");
+
+let pendingFiles = [];
+function setFiles(list) {
+  pendingFiles = Array.from(list).filter(f => f.name.toLowerCase().endsWith(".json"));
+  pendingFiles.sort((a,b) => a.name.localeCompare(b.name));
+  fileListEl.textContent = pendingFiles.length
+    ? pendingFiles.map(f => `${f.name}  (${(f.size/1024/1024).toFixed(1)} MB)`).join("\n")
+    : "";
+  runBtn.disabled = pendingFiles.length === 0;
+}
+
+filesInput.addEventListener("change", e => setFiles(e.target.files));
+["dragenter","dragover"].forEach(ev =>
+  dropEl.addEventListener(ev, e => { e.preventDefault(); dropEl.classList.add("dragover"); }));
+["dragleave","drop"].forEach(ev =>
+  dropEl.addEventListener(ev, e => { e.preventDefault(); dropEl.classList.remove("dragover"); }));
+dropEl.addEventListener("drop", e => {
+  if (e.dataTransfer && e.dataTransfer.files) setFiles(e.dataTransfer.files);
+});
+
+// ===== Parse =====
+
+runBtn.addEventListener("click", parse);
+
+async function parse() {
+  runBtn.disabled = true;
+  statusEl.textContent = "Reading…";
+  resultArea.style.display = "none";
+  conversations = [];
+  selected.clear();
+  await new Promise(r => setTimeout(r, 0));
+
+  const allConvos = [];
+  const sources = [];
+
+  for (const f of pendingFiles) {
+    statusEl.textContent = `Reading ${f.name}…`;
+    await new Promise(r => setTimeout(r, 0));
+    let data;
+    try {
+      const text = await readFileAsText(f);
+      data = JSON.parse(text);
+    } catch (err) {
+      statusEl.textContent = `Error in ${f.name}: ${err.message}`;
+      runBtn.disabled = false;
+      return;
+    }
+    if (!Array.isArray(data)) {
+      statusEl.textContent = `Skipped ${f.name}: not a JSON array.`;
+      continue;
+    }
+    allConvos.push(...data);
+    sources.push(f.name);
+  }
+
+  statusEl.textContent = `Parsed ${allConvos.length} conversations. Indexing…`;
+  await new Promise(r => setTimeout(r, 0));
+
+  let idCounter = 0;
+  let totalMsgs = 0;
+  for (const c of allConvos) {
+    const messages = msgsFromMapping(c.mapping || {});
+    if (messages.length === 0) continue; // skip empty conversations
+    totalMsgs += messages.length;
+    const timestamps = messages.map(m => m.timestamp).filter(t => t);
+    const dateFrom = timestamps.length ? Math.min(...timestamps) : (c.create_time || 0);
+    const dateTo = timestamps.length ? Math.max(...timestamps) : (c.update_time || 0);
+    const contentLC = messages.map(m => m.text).join("\n").toLowerCase();
+    conversations.push({
+      id: idCounter++,
+      title: c.title || "(untitled)",
+      create_time: c.create_time,
+      update_time: c.update_time,
+      messages,
+      contentLC,
+      dateFrom,
+      dateTo,
+    });
+  }
+
+  // Default selection: everything
+  for (const c of conversations) selected.add(c.id);
+
+  statsEl.innerHTML = `
+    <strong>${conversations.length}</strong> conversations,
+    <strong>${totalMsgs.toLocaleString()}</strong> total messages,
+    from <strong>${sources.length}</strong> file(s)
+    (${sources.join(", ")})
+  `;
+  resultArea.style.display = "";
+  statusEl.textContent = "";
+  applyAndRender();
+  runBtn.disabled = false;
+}
+
+// ===== Filtering, sorting, rendering =====
+
+const fTitle = document.getElementById("fTitle");
+const fKeyword = document.getElementById("fKeyword");
+const fFrom = document.getElementById("fFrom");
+const fTo = document.getElementById("fTo");
+
+[fTitle, fKeyword, fFrom, fTo].forEach(el => el.addEventListener("input", applyAndRender));
+
+function applyAndRender() {
+  const titleQ = fTitle.value.trim().toLowerCase();
+  const kwRaw = fKeyword.value.trim().toLowerCase();
+  const keywords = kwRaw ? kwRaw.split(",").map(s => s.trim()).filter(Boolean) : [];
+  const fromTs = fFrom.value ? Date.parse(fFrom.value + "T00:00:00") / 1000 : null;
+  const toTs = fTo.value ? Date.parse(fTo.value + "T23:59:59") / 1000 : null;
+
+  const filtered = conversations.filter(c => {
+    if (titleQ && !c.title.toLowerCase().includes(titleQ)) return false;
+    if (keywords.length && !keywords.some(k => c.contentLC.includes(k))) return false;
+    if (fromTs !== null && c.dateTo && c.dateTo < fromTs) return false;
+    if (toTs !== null && c.dateFrom && c.dateFrom > toTs) return false;
+    return true;
+  });
+
+  filtered.sort((a, b) => {
+    let av, bv;
+    if (sortKey === "title") { av = a.title.toLowerCase(); bv = b.title.toLowerCase(); }
+    else if (sortKey === "count") { av = a.messages.length; bv = b.messages.length; }
+    else if (sortKey === "updated") { av = a.update_time || a.dateTo || 0; bv = b.update_time || b.dateTo || 0; }
+    else { av = a.create_time || a.dateFrom || 0; bv = b.create_time || b.dateFrom || 0; }
+    if (av < bv) return -1 * sortDir;
+    if (av > bv) return 1 * sortDir;
+    return 0;
+  });
+
+  visibleIds = filtered.map(c => c.id);
+  renderTable(filtered);
+  updateCounts();
+  updateSortIndicators();
+}
+
+function renderTable(rows) {
+  if (rows.length === 0) {
+    tbody.innerHTML = "";
+    emptyMsg.style.display = "";
+    return;
+  }
+  emptyMsg.style.display = "none";
+  const frag = document.createDocumentFragment();
+  for (const c of rows) {
+    const tr = document.createElement("tr");
+    const isSel = selected.has(c.id);
+
+    const tdCb = document.createElement("td");
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.checked = isSel; cb.dataset.id = c.id;
+    cb.addEventListener("change", () => {
+      if (cb.checked) selected.add(c.id); else selected.delete(c.id);
+      updateCounts();
+    });
+    tdCb.appendChild(cb);
+    tr.appendChild(tdCb);
+
+    const tdT = document.createElement("td"); tdT.className = "title"; tdT.textContent = c.title; tr.appendChild(tdT);
+    const tdN = document.createElement("td"); tdN.className = "num"; tdN.textContent = c.messages.length; tr.appendChild(tdN);
+    const tdC = document.createElement("td"); tdC.className = "date"; tdC.textContent = dateOnly(c.create_time || c.dateFrom); tr.appendChild(tdC);
+    const tdU = document.createElement("td"); tdU.className = "date"; tdU.textContent = dateOnly(c.update_time || c.dateTo); tr.appendChild(tdU);
+
+    frag.appendChild(tr);
+  }
+  tbody.innerHTML = "";
+  tbody.appendChild(frag);
+}
+
+function updateCounts() {
+  const visSel = visibleIds.filter(id => selected.has(id)).length;
+  countsEl.textContent = `${visSel} selected of ${visibleIds.length} visible (${conversations.length} total)`;
+  selHeader.checked = visibleIds.length > 0 && visSel === visibleIds.length;
+  selHeader.indeterminate = visSel > 0 && visSel < visibleIds.length;
+}
+
+function updateSortIndicators() {
+  document.querySelectorAll("thead th[data-sort]").forEach(th => {
+    const arrow = th.querySelector(".arrow");
+    if (th.dataset.sort === sortKey) arrow.textContent = sortDir === 1 ? "▲" : "▼";
+    else arrow.textContent = "";
+  });
+}
+
+document.querySelectorAll("thead th[data-sort]").forEach(th => {
+  th.addEventListener("click", () => {
+    const key = th.dataset.sort;
+    if (sortKey === key) sortDir = -sortDir;
+    else { sortKey = key; sortDir = (key === "title") ? 1 : -1; }
+    applyAndRender();
+  });
+});
+
+document.getElementById("selVisible").addEventListener("click", () => {
+  for (const id of visibleIds) selected.add(id);
+  syncCheckboxes(); updateCounts();
+});
+document.getElementById("deselVisible").addEventListener("click", () => {
+  for (const id of visibleIds) selected.delete(id);
+  syncCheckboxes(); updateCounts();
+});
+document.getElementById("invertVisible").addEventListener("click", () => {
+  for (const id of visibleIds) {
+    if (selected.has(id)) selected.delete(id); else selected.add(id);
+  }
+  syncCheckboxes(); updateCounts();
+});
+document.getElementById("clearAll").addEventListener("click", () => {
+  selected.clear();
+  syncCheckboxes(); updateCounts();
+});
+selHeader.addEventListener("click", () => {
+  if (selHeader.checked) { for (const id of visibleIds) selected.add(id); }
+  else { for (const id of visibleIds) selected.delete(id); }
+  syncCheckboxes(); updateCounts();
+});
+
+function syncCheckboxes() {
+  tbody.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.checked = selected.has(Number(cb.dataset.id));
+  });
+}
+
+// ===== Download =====
+
+document.getElementById("dlZip").addEventListener("click", () => downloadSelected("zip"));
+document.getElementById("dlText").addEventListener("click", () => downloadSelected("text"));
+
+function buildOutputFiles() {
+  const chosen = conversations.filter(c => selected.has(c.id));
+  if (chosen.length === 0) return null;
+
+  // Build _INDEX.txt
+  const indexLines = [];
+  indexLines.push("ChatGPT Export — Selected Conversations");
+  indexLines.push("=".repeat(60));
+  const now = new Date();
+  const pad = n => String(n).padStart(2,"0");
+  indexLines.push(`Extracted: ${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`);
+  indexLines.push(`Count: ${chosen.length}`);
+  const totalMsgs = chosen.reduce((s,c) => s + c.messages.length, 0);
+  indexLines.push(`Total messages: ${totalMsgs.toLocaleString()}`);
+  indexLines.push("");
+  indexLines.push("=".repeat(60));
+  indexLines.push("");
+
+  const sortedForIndex = chosen.slice().sort((a,b) => (a.dateFrom||0) - (b.dateFrom||0));
+  for (const c of sortedForIndex) {
+    indexLines.push(c.title);
+    indexLines.push(`  ${c.messages.length} msgs | ${dateOnly(c.create_time || c.dateFrom)} → ${dateOnly(c.update_time || c.dateTo)}`);
+    indexLines.push("");
+  }
+
+  const files = [{ name: "_INDEX.txt", text: indexLines.join("\n") }];
+
+  const usedNames = new Set(["_INDEX.txt"]);
+  for (const c of sortedForIndex) {
+    let fname = safeName(c.title) + ".txt";
+    let n = 1;
+    while (usedNames.has(fname)) { fname = safeName(c.title) + `_${n}.txt`; n++; }
+    usedNames.add(fname);
+    files.push({ name: fname, text: formatConversation(c) });
+  }
+  return { files, chosen, sortedForIndex };
+}
+
+function downloadSelected(kind) {
+  const out = buildOutputFiles();
+  if (!out) { dlInfo.textContent = "Nothing selected."; return; }
+  const { files, sortedForIndex } = out;
+
+  if (kind === "zip") {
+    const blob = buildZip(files);
+    triggerDownload(blob, "chatgpt-conversations.zip");
+    dlInfo.textContent = `Downloaded ${files.length - 1} conversation(s) + index, ${(blob.size/1024/1024).toFixed(1)} MB.`;
+  } else {
+    const indexText = files[0].text;
+    const body = sortedForIndex.map(c =>
+      `\n\n>>>>>>>>>> ${safeName(c.title)}.txt <<<<<<<<<<\n\n` + formatConversation(c)
+    ).join("");
+    const combined = indexText + body;
+    const blob = new Blob([combined], { type: "text/plain;charset=utf-8" });
+    triggerDownload(blob, "chatgpt-conversations.txt");
+    dlInfo.textContent = `Downloaded ${sortedForIndex.length} conversation(s), ${(blob.size/1024/1024).toFixed(1)} MB.`;
+  }
+}
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+// ===== Minimal stored-zip writer =====
+
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+function buildZip(files) {
+  const enc = new TextEncoder();
+  const records = files.map(f => {
+    const nameBytes = enc.encode(f.name);
+    const dataBytes = enc.encode(f.text);
+    return { nameBytes, dataBytes, crc: crc32(dataBytes) };
+  });
+  const dosTime = 0, dosDate = (1 << 5) | 1;
+
+  const parts = [];
+  let offset = 0;
+  const central = [];
+  for (const r of records) {
+    const lfh = new ArrayBuffer(30);
+    const v = new DataView(lfh);
+    v.setUint32(0, 0x04034b50, true);
+    v.setUint16(4, 20, true);
+    v.setUint16(6, 0, true);
+    v.setUint16(8, 0, true);
+    v.setUint16(10, dosTime, true);
+    v.setUint16(12, dosDate, true);
+    v.setUint32(14, r.crc, true);
+    v.setUint32(18, r.dataBytes.length, true);
+    v.setUint32(22, r.dataBytes.length, true);
+    v.setUint16(26, r.nameBytes.length, true);
+    v.setUint16(28, 0, true);
+    parts.push(new Uint8Array(lfh), r.nameBytes, r.dataBytes);
+    const localOffset = offset;
+    offset += 30 + r.nameBytes.length + r.dataBytes.length;
+
+    const cd = new ArrayBuffer(46);
+    const cv = new DataView(cd);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0, true);
+    cv.setUint16(10, 0, true);
+    cv.setUint16(12, dosTime, true);
+    cv.setUint16(14, dosDate, true);
+    cv.setUint32(16, r.crc, true);
+    cv.setUint32(20, r.dataBytes.length, true);
+    cv.setUint32(24, r.dataBytes.length, true);
+    cv.setUint16(28, r.nameBytes.length, true);
+    cv.setUint16(30, 0, true);
+    cv.setUint16(32, 0, true);
+    cv.setUint16(34, 0, true);
+    cv.setUint16(36, 0, true);
+    cv.setUint32(38, 0, true);
+    cv.setUint32(42, localOffset, true);
+    central.push({ cd: new Uint8Array(cd), nameBytes: r.nameBytes });
+  }
+  const centralStart = offset;
+  let centralSize = 0;
+  for (const e of central) {
+    parts.push(e.cd, e.nameBytes);
+    centralSize += e.cd.length + e.nameBytes.length;
+    offset += e.cd.length + e.nameBytes.length;
+  }
+  const eocd = new ArrayBuffer(22);
+  const ev = new DataView(eocd);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(4, 0, true);
+  ev.setUint16(6, 0, true);
+  ev.setUint16(8, records.length, true);
+  ev.setUint16(10, records.length, true);
+  ev.setUint32(12, centralSize, true);
+  ev.setUint32(16, centralStart, true);
+  ev.setUint16(20, 0, true);
+  parts.push(new Uint8Array(eocd));
+  return new Blob(parts, { type: "application/zip" });
+}
+
+</script>
+</body>
+</html>
